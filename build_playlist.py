@@ -8,16 +8,8 @@ import re
 SOURCES = [
     "https://iptv-org.github.io/iptv/countries/ae.m3u",
     "https://iptv-org.github.io/iptv/countries/sa.m3u",
+    "https://iptv-org.github.io/iptv/countries/in.m3u",
     "https://iptv-org.github.io/iptv/regions/mena.m3u",
-]
-
-UAE_SPORTS = [
-    "abu dhabi sports",
-    "ad sports",
-    "dubai sports",
-    "sharjah sports",
-    "dubai racing",
-    "yas tv",
 ]
 
 BLOCKED_MBC = [
@@ -26,6 +18,23 @@ BLOCKED_MBC = [
     "mbc loud",
     "mbc mood",
     "mbc fm",
+]
+
+INDIAN_CHANNELS = [
+    "zee aflam",
+    "zee cinema",
+    "zee tv",
+    "sony max",
+    "sony max 2",
+    "sony max uae",
+    "colors cineplex",
+    "colors cineplex bollywood",
+    "colors cineplex superhits",
+    "star gold",
+    "star gold select",
+    "b4u kadak",
+    "b4u movies",
+    "asianet movies",
 ]
 
 def fetch(url, timeout=20):
@@ -38,18 +47,28 @@ def fetch(url, timeout=20):
     )
 
     with urlopen(req, timeout=timeout) as response:
-        return response.read().decode("utf-8", errors="replace")
+        return response.read().decode(
+            "utf-8",
+            errors="replace"
+        )
 
 
 def parse_m3u(text):
-    lines = [line.strip() for line in text.splitlines()]
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+    ]
+
     entries = []
 
     i = 0
 
     while i < len(lines):
+
         if lines[i].startswith("#EXTINF:"):
+
             extinf = lines[i]
+
             extras = []
 
             j = i + 1
@@ -83,13 +102,18 @@ def parse_m3u(text):
 
 
 def channel_name(extinf):
+
     if "," not in extinf:
         return ""
 
-    return extinf.rsplit(",", 1)[-1].strip()
+    return extinf.rsplit(
+        ",",
+        1
+    )[-1].strip()
 
 
 def normalize(text):
+
     return re.sub(
         r"[^a-z0-9]+",
         " ",
@@ -97,16 +121,8 @@ def normalize(text):
     ).strip()
 
 
-def is_uae_sport(name):
-    n = normalize(name)
-
-    return any(
-        phrase in n
-        for phrase in UAE_SPORTS
-    )
-
-
 def is_mbc(name):
+
     n = normalize(name)
 
     if not (
@@ -116,56 +132,86 @@ def is_mbc(name):
         return False
 
     for blocked in BLOCKED_MBC:
+
         if blocked in n:
             return False
 
     return True
 
 
+def is_indian_channel(name):
+
+    n = normalize(name)
+
+    for wanted in INDIAN_CHANNELS:
+
+        if normalize(wanted) in n:
+            return True
+
+    return False
+
+
 def stream_works(url):
+
     try:
+
         req = Request(
             url,
             headers={
                 "User-Agent": "Mozilla/5.0",
-                "Accept": "application/vnd.apple.mpegurl,application/x-mpegURL,*/*",
+                "Accept":
+                "application/vnd.apple.mpegurl,"
+                "application/x-mpegURL,*/*",
             }
         )
 
-        with urlopen(req, timeout=15) as response:
-            data = response.read(8192).decode(
+        with urlopen(
+            req,
+            timeout=15
+        ) as response:
+
+            data = response.read(
+                8192
+            ).decode(
                 "utf-8",
                 errors="replace"
             )
 
         return "#EXTM3U" in data
 
-    except (HTTPError, URLError, TimeoutError, Exception) as error:
+    except Exception as error:
+
         print(
             f"FAILED: {url}"
         )
+
         print(
             f"Reason: {error}"
         )
+
         return False
 
 
 def main():
+
     candidates = []
+
     seen_urls = set()
 
     for source in SOURCES:
 
         try:
+
             text = fetch(source)
 
         except Exception as error:
+
             print(
-                f"Could not load source: {source}"
+                f"Could not load: {source}"
             )
-            print(
-                f"Reason: {error}"
-            )
+
+            print(error)
+
             continue
 
         for entry in parse_m3u(text):
@@ -175,8 +221,8 @@ def main():
             name = channel_name(extinf)
 
             if not (
-                is_uae_sport(name)
-                or is_mbc(name)
+                is_mbc(name)
+                or is_indian_channel(name)
             ):
                 continue
 
@@ -204,6 +250,7 @@ def main():
         )
 
         if stream_works(url):
+
             print(
                 f"WORKING: {name}"
             )
@@ -211,6 +258,7 @@ def main():
             working.append(entry)
 
         else:
+
             print(
                 f"REMOVED: {name}"
             )
@@ -218,21 +266,17 @@ def main():
         print()
 
     working.sort(
-        key=lambda entry: (
-            0
-            if is_uae_sport(
-                channel_name(entry[0])
-            )
-            else 1,
-            normalize(
-                channel_name(entry[0])
+        key=lambda entry:
+        normalize(
+            channel_name(
+                entry[0]
             )
         )
     )
 
     lines = [
         "#EXTM3U",
-        "# UAE Sports + selected working MBC channels",
+        "# Working MBC + Indian channels",
     ]
 
     for extinf, extras, url in working:
@@ -243,7 +287,9 @@ def main():
 
         lines.append(url)
 
-    Path("playlist.m3u").write_text(
+    Path(
+        "playlist.m3u"
+    ).write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8"
     )
@@ -251,15 +297,19 @@ def main():
     print()
     print("==============================")
     print(
-        f"Created playlist with {len(working)} working channels"
+        f"Created playlist with "
+        f"{len(working)} working channels"
     )
     print("==============================")
     print()
 
     for entry in working:
+
         print(
             "-",
-            channel_name(entry[0])
+            channel_name(
+                entry[0]
+            )
         )
 
 
