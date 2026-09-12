@@ -1,0 +1,5 @@
+#EXTM3U
+# Optional: paste ONLY authorized provider entries below this line.
+# Example format:
+# #EXTINF:-1 group-title="Authorized",My Channel
+# https://your-authorized-provider.example/stream.m3u8

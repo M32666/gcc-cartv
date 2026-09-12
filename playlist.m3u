@@ -1,0 +1,3 @@
+#EXTM3U
+# This file is generated automatically by build_playlist.py.
+# Run the GitHub Action named "Update CarTV playlist" after uploading the repository files.
