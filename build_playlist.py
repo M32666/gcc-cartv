@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
 from pathlib import Path
 import re
 
@@ -10,7 +11,7 @@ SOURCES = [
     "https://iptv-org.github.io/iptv/regions/mena.m3u",
 ]
 
-WANTED_UAE_SPORTS = [
+UAE_SPORTS = [
     "abu dhabi sports",
     "ad sports",
     "dubai sports",
@@ -20,18 +21,23 @@ WANTED_UAE_SPORTS = [
 ]
 
 BLOCKED_MBC = [
-    "mbc 3",      # kids
-    "mbc fm",     # music/radio-style channel
+    "mbc 3",
+    "mbc persia",
+    "mbc loud",
+    "mbc mood",
+    "mbc fm",
 ]
 
-def fetch(url):
+def fetch(url, timeout=20):
     req = Request(
         url,
         headers={
-            "User-Agent": "Mozilla/5.0"
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "*/*",
         }
     )
-    with urlopen(req, timeout=30) as response:
+
+    with urlopen(req, timeout=timeout) as response:
         return response.read().decode("utf-8", errors="replace")
 
 
@@ -96,7 +102,7 @@ def is_uae_sport(name):
 
     return any(
         phrase in n
-        for phrase in WANTED_UAE_SPORTS
+        for phrase in UAE_SPORTS
     )
 
 
@@ -109,18 +115,43 @@ def is_mbc(name):
     ):
         return False
 
-    if any(
-        blocked in n
-        for blocked in BLOCKED_MBC
-    ):
-        return False
+    for blocked in BLOCKED_MBC:
+        if blocked in n:
+            return False
 
     return True
 
 
-def main():
+def stream_works(url):
+    try:
+        req = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/vnd.apple.mpegurl,application/x-mpegURL,*/*",
+            }
+        )
 
-    output = []
+        with urlopen(req, timeout=15) as response:
+            data = response.read(8192).decode(
+                "utf-8",
+                errors="replace"
+            )
+
+        return "#EXTM3U" in data
+
+    except (HTTPError, URLError, TimeoutError, Exception) as error:
+        print(
+            f"FAILED: {url}"
+        )
+        print(
+            f"Reason: {error}"
+        )
+        return False
+
+
+def main():
+    candidates = []
     seen_urls = set()
 
     for source in SOURCES:
@@ -130,13 +161,14 @@ def main():
 
         except Exception as error:
             print(
-                f"Could not load {source}: {error}"
+                f"Could not load source: {source}"
+            )
+            print(
+                f"Reason: {error}"
             )
             continue
 
-        entries = parse_m3u(text)
-
-        for entry in entries:
+        for entry in parse_m3u(text):
 
             extinf, extras, url = entry
 
@@ -153,9 +185,39 @@ def main():
 
             seen_urls.add(url)
 
-            output.append(entry)
+            candidates.append(entry)
 
-    output.sort(
+    working = []
+
+    print()
+    print("Testing streams...")
+    print()
+
+    for entry in candidates:
+
+        extinf, extras, url = entry
+
+        name = channel_name(extinf)
+
+        print(
+            f"Testing: {name}"
+        )
+
+        if stream_works(url):
+            print(
+                f"WORKING: {name}"
+            )
+
+            working.append(entry)
+
+        else:
+            print(
+                f"REMOVED: {name}"
+            )
+
+        print()
+
+    working.sort(
         key=lambda entry: (
             0
             if is_uae_sport(
@@ -170,10 +232,10 @@ def main():
 
     lines = [
         "#EXTM3U",
-        "# UAE Sports + MBC",
+        "# UAE Sports + selected working MBC channels",
     ]
 
-    for extinf, extras, url in output:
+    for extinf, extras, url in working:
 
         lines.append(extinf)
 
@@ -186,16 +248,15 @@ def main():
         encoding="utf-8"
     )
 
+    print()
+    print("==============================")
     print(
-        f"Created playlist with "
-        f"{len(output)} channels"
+        f"Created playlist with {len(working)} working channels"
     )
-
+    print("==============================")
     print()
 
-    print("Channels included:")
-
-    for entry in output:
+    for entry in working:
         print(
             "-",
             channel_name(entry[0])
