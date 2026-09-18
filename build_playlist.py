@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 
 from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import re
 
 
 # ============================================================
-# PLAYLIST SOURCES
+# SOURCES
 # ============================================================
 
 SOURCES = [
@@ -28,7 +27,7 @@ MAX_WORKERS = 15
 
 
 # ============================================================
-# MBC CHANNELS TO EXCLUDE
+# MBC
 # ============================================================
 
 BLOCKED_MBC = [
@@ -41,7 +40,7 @@ BLOCKED_MBC = [
 
 
 # ============================================================
-# UAE CHANNELS TO KEEP
+# UAE CHANNELS
 # ============================================================
 
 UAE_CHANNELS = [
@@ -52,19 +51,58 @@ UAE_CHANNELS = [
 
 
 # ============================================================
-# INDIAN CHANNELS TO EXCLUDE
+# KNOWN INDIAN MOVIE CHANNELS
 # ============================================================
 
-BLOCKED_INDIAN_WORDS = [
-    "news",
-    "sports",
-    "sport",
-    "cricket",
+INDIAN_MOVIE_CHANNELS = [
+    "zee cinema",
+    "zee anmol cinema",
+    "zee bollywood",
+    "sony max",
+    "sony max 2",
+    "sony max hd",
+    "sony wah",
+    "star gold",
+    "star gold 2",
+    "star gold select",
+    "star gold thrills",
+    "colors cineplex",
+    "colors cineplex bollywood",
+    "colors cineplex superhits",
+    "b4u movies",
+    "b4u kadak",
+    "bflix movies",
+    "asianet movies",
+    "movies now",
+    "romedy now",
+    "mnx",
+    "utv movies",
+    "utv action",
+    "and pictures",
+    "&pictures",
+    "andflix",
+    "&flix",
+    "cinema tv",
 ]
 
 
 # ============================================================
-# DOWNLOAD PLAYLIST
+# MOVIE WORDS
+# ============================================================
+
+MOVIE_WORDS = [
+    "movie",
+    "movies",
+    "cinema",
+    "cineplex",
+    "film",
+    "films",
+    "bollywood",
+]
+
+
+# ============================================================
+# DOWNLOAD SOURCE
 # ============================================================
 
 def fetch(url, timeout=20):
@@ -77,7 +115,10 @@ def fetch(url, timeout=20):
         }
     )
 
-    with urlopen(req, timeout=timeout) as response:
+    with urlopen(
+        req,
+        timeout=timeout
+    ) as response:
 
         return response.read().decode(
             "utf-8",
@@ -97,7 +138,6 @@ def parse_m3u(text):
     ]
 
     entries = []
-
     i = 0
 
     while i < len(lines):
@@ -140,7 +180,7 @@ def parse_m3u(text):
 
 
 # ============================================================
-# GET CHANNEL NAME
+# CHANNEL NAME
 # ============================================================
 
 def channel_name(extinf):
@@ -155,7 +195,7 @@ def channel_name(extinf):
 
 
 # ============================================================
-# NORMALIZE TEXT
+# NORMALIZE
 # ============================================================
 
 def normalize(text):
@@ -168,7 +208,7 @@ def normalize(text):
 
 
 # ============================================================
-# READ M3U ATTRIBUTE
+# GET ATTRIBUTE
 # ============================================================
 
 def get_attribute(extinf, attribute):
@@ -222,12 +262,12 @@ def is_uae_channel(name):
 
 
 # ============================================================
-# INDIA FILTER
+# INDIAN MOVIE FILTER
 # ============================================================
 
-def is_indian_channel(extinf, source):
+def is_indian_movie(extinf, source):
 
-    # Only channels from India's IPTV-org playlist
+    # Only inspect channels from India's playlist
     if "/countries/in.m3u" not in source:
         return False
 
@@ -242,18 +282,37 @@ def is_indian_channel(extinf, source):
         )
     )
 
-    # Remove news and sports
-    for blocked in BLOCKED_INDIAN_WORDS:
+    # ------------------------------------------
+    # Known Indian movie channel names
+    # ------------------------------------------
 
-        word = normalize(blocked)
+    for wanted in INDIAN_MOVIE_CHANNELS:
+
+        wanted_normalized = normalize(wanted)
+
+        if (
+            name == wanted_normalized
+            or name.startswith(
+                wanted_normalized + " "
+            )
+        ):
+            return True
+
+    # ------------------------------------------
+    # Movie category detection
+    # ------------------------------------------
+
+    for word in MOVIE_WORDS:
+
+        word = normalize(word)
 
         if (
             word in name
             or word in group
         ):
-            return False
+            return True
 
-    return True
+    return False
 
 
 # ============================================================
@@ -284,13 +343,19 @@ def stream_works(url):
 
             content_type = (
                 response.headers
-                .get("Content-Type", "")
+                .get(
+                    "Content-Type",
+                    ""
+                )
                 .lower()
             )
 
             data = response.read(8192)
 
-        # Check for normal HLS playlist
+        # ------------------------------------------
+        # HLS
+        # ------------------------------------------
+
         text = data.decode(
             "utf-8",
             errors="replace"
@@ -299,7 +364,10 @@ def stream_works(url):
         if "#EXTM3U" in text:
             return True
 
-        # Some working streams use a video content type
+        # ------------------------------------------
+        # Other video responses
+        # ------------------------------------------
+
         valid_types = [
             "mpegurl",
             "video/",
@@ -315,17 +383,12 @@ def stream_works(url):
 
         return False
 
-    except (
-        HTTPError,
-        URLError,
-        TimeoutError,
-        Exception
-    ):
+    except Exception:
         return False
 
 
 # ============================================================
-# TEST ONE CHANNEL
+# TEST ENTRY
 # ============================================================
 
 def test_entry(entry):
@@ -354,13 +417,15 @@ def main():
     print("==============================")
     print()
 
-    # --------------------------------------------------------
-    # DOWNLOAD SOURCES
-    # --------------------------------------------------------
+    # ========================================================
+    # LOAD SOURCES
+    # ========================================================
 
     for source in SOURCES:
 
-        print(f"Loading: {source}")
+        print(
+            f"Loading: {source}"
+        )
 
         try:
 
@@ -383,9 +448,9 @@ def main():
             f"Found {len(entries)} entries"
         )
 
-        # ----------------------------------------------------
-        # FILTER CHANNELS
-        # ----------------------------------------------------
+        # ====================================================
+        # FILTER
+        # ====================================================
 
         for entry in entries:
 
@@ -396,7 +461,7 @@ def main():
             keep = (
                 is_mbc(name)
                 or is_uae_channel(name)
-                or is_indian_channel(
+                or is_indian_movie(
                     extinf,
                     source
                 )
@@ -405,7 +470,7 @@ def main():
             if not keep:
                 continue
 
-            # Prevent duplicate stream URLs
+            # Remove duplicate URLs
             if url in seen_urls:
                 continue
 
@@ -415,18 +480,18 @@ def main():
 
         print()
 
+    # ========================================================
+    # TEST STREAMS
+    # ========================================================
+
     print("==============================")
 
     print(
-        f"Found {len(candidates)} candidate streams"
+        f"Candidate streams: {len(candidates)}"
     )
 
     print("==============================")
     print()
-
-    # --------------------------------------------------------
-    # TEST STREAMS IN PARALLEL
-    # --------------------------------------------------------
 
     working = []
 
@@ -485,9 +550,9 @@ def main():
                     f"REMOVED: {name}"
                 )
 
-    # --------------------------------------------------------
-    # SORT CHANNELS
-    # --------------------------------------------------------
+    # ========================================================
+    # SORT
+    # ========================================================
 
     working.sort(
         key=lambda entry: normalize(
@@ -495,15 +560,15 @@ def main():
         )
     )
 
-    # --------------------------------------------------------
-    # CREATE PLAYLIST
-    # --------------------------------------------------------
+
+    # ========================================================
+    # BUILD PLAYLIST
+    # ========================================================
 
     lines = [
         "#EXTM3U",
         "# CarTV Playlist",
-        "# MBC + UAE + Indian Channels",
-        "# Indian News and Sports Excluded",
+        "# MBC + UAE + Indian Movies",
     ]
 
     for extinf, extras, url in working:
@@ -514,6 +579,11 @@ def main():
 
         lines.append(url)
 
+
+    # ========================================================
+    # SAVE
+    # ========================================================
+
     Path(
         "playlist.m3u"
     ).write_text(
@@ -521,9 +591,10 @@ def main():
         encoding="utf-8"
     )
 
-    # --------------------------------------------------------
+
+    # ========================================================
     # RESULTS
-    # --------------------------------------------------------
+    # ========================================================
 
     print()
     print("==============================")
@@ -546,7 +617,8 @@ def main():
     )
 
     print()
-    print("Channels in playlist:")
+
+    print("Channels:")
     print()
 
     for entry in working:
